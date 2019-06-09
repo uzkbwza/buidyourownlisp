@@ -26,17 +26,10 @@ void add_history(char* unused) {}
 #include <editline.h>
 #endif
 
-/* we are forward declaring this because lval_print and lval_expr_print both
- * call each other. since lval_expr_print is declared first, we need to make
- * sure it can use the later-called lval_print by declaring it the second time
- * up here, before lval_expr_print is called. now the functions can call each
- * other with no issue. */
-void lval_print(lval* v);
-
 /* create enumeration of possible lval types */
 enum {
-	LVAL_NUM,
 	LVAL_ERR,
+	LVAL_NUM,
 	LVAL_SYM,
 	LVAL_SEXPR
 };
@@ -67,7 +60,7 @@ enum {
  * it must only contain pointers to its own type, not the type directly.
  * Otherwise, the size of the struct would refer to itself, and grow infinite
  * in size when you tried to calculate it! */
-typedef struct lval{
+typedef struct lval {
 	/* types are int so that we can easily understand what
 	 * the encoded struct is; for example, if type is 0,
 	 * then structure is a Number. or if type is 1, then
@@ -75,7 +68,6 @@ typedef struct lval{
 	 * effective way to do this.*/
 	int type;	
 	long num;
-	int err;
 	/* error and symbol types have some string data. we're
 	 * changing the representation of errors to a string.
 	 * this mans we can store unique error messages
@@ -112,7 +104,7 @@ lval* lval_num(long x) {
 
 /* and make the error type function. */
 lval* lval_err(char* m) {
-	lval* = malloc(sizeof(lval));
+	lval* v = malloc(sizeof(lval));
 	v->type = LVAL_ERR;
 	v->err = malloc(strlen(m)+1);
 	strcpy(v->err, m);
@@ -121,7 +113,7 @@ lval* lval_err(char* m) {
 
 /* Construct a pointer to a new Symbol lval */
 lval* lval_sym(char* s) {
-	lval* = malloc(sizeof(lval));
+	lval* v = malloc(sizeof(lval));
 	v->type = LVAL_SYM;
 	v->sym = malloc(strlen(s)+1);
 	strcpy(v->sym, s);
@@ -133,7 +125,7 @@ lval* lval_sexpr(void) {
 	lval* v = malloc(sizeof(lval));
 	v->type = LVAL_SEXPR;
 	v->count = 0;
-	v->cell = NULL
+	v->cell = NULL;
 	return v;
 }
 
@@ -144,33 +136,41 @@ lval* lval_read_num(mpc_ast_t* t) {
 		lval_num(x) : lval_err("invalid number");
 }
 
-lval* lval_read(mpc_ast_t* t) {
-
-	/* if symbol or number return conversion to that type */
-	if (strstr(t->tag, "number")) {return lval_read_num(t); }
-	if (strstr(t->tag, "symbol")) {return lval_sym(t->contents); }
-
-	/* if root (>) or sexpr then create empty list */
-	lval* x = NULL;
-	if (strcmp(t->tag, ">") == 0) { x = lval_sexpr(); }
-	if (strstr(t->tag, "sexpr")) { x = lval_sexpr(); }
-
-	/* fill this list with any valid expression contained within */
-	for (int i = 0; i < t->children_num; i++) {
-		if (strcmp(t->children[1]->contents, "(") == 0) { continue; }
-		if (strcmp(t->children[1]->contents, ")") == 0) { continue; }
-		if (strcmp(t->children[1]->tag, "regex") == 0) { continue; }
-		x = lval_add(x, lval_read(t->children[i]));
-	}
-	return x;
-}
-
 lval* lval_add(lval* v, lval* x) {
-	v->count++;
-	v->cell = realloc(v->cell, sizeof(lval*) * v->count);
-	v->cell[v->count-1] = x;
-	return v;
+  v->count++;
+  v->cell = realloc(v->cell, sizeof(lval*) * v->count);
+  v->cell[v->count-1] = x;
+  return v;
 }
+
+lval* lval_read(mpc_ast_t* t) {
+  
+  /* If Symbol or Number return conversion to that type */
+  if (strstr(t->tag, "number")) { return lval_read_num(t); }
+  if (strstr(t->tag, "symbol")) { return lval_sym(t->contents); }
+  
+  /* If root (>) or sexpr then create empty list */
+  lval* x = NULL;
+  if (strcmp(t->tag, ">") == 0) { x = lval_sexpr(); } 
+  if (strstr(t->tag, "sexpr"))  { x = lval_sexpr(); }
+  
+  /* Fill this list with any valid expression contained within */
+  for (int i = 0; i < t->children_num; i++) {
+    if (strcmp(t->children[i]->contents, "(") == 0) { continue; }
+    if (strcmp(t->children[i]->contents, ")") == 0) { continue; }
+    if (strcmp(t->children[i]->tag,  "regex") == 0) { continue; }
+    x = lval_add(x, lval_read(t->children[i]));
+  }
+  
+  return x;
+}
+/* we are forward declaring this because lval_print and lval_expr_print both
+ * call each other. since lval_expr_print is declared first, we need to make
+ * sure it can use the later-called lval_print by declaring it the second time
+ * up here, before lval_expr_print is called. now the functions can call each
+ * other with no issue. */
+void lval_print(lval* v);
+
 
 /* now we modify our print function to print out s-expressions types.
  * using this we can doublecheck that hte reading phase is working correctly by printing out the s-expressions we read in and verifying that they match htose we input. */
@@ -189,28 +189,18 @@ void lval_expr_print(lval* v, char open, char close) {
 }
 
  
-void lval_print(lval v) {
-	/* because our output can now be more than 1
-	 * thing, simply using printf to output
-	 * will no longer suffice. since we need the
-	 * program to behave differently depending on
-	 * the lval-type, it now makes sense to use a
-	 * switch-case statement. switch will take some
-	 * value (in parentheses) as input and compare
-	 * it to other known values, or cases. when
-	 * the values are equal it executes the code that
-	 * follows until the next break statement. */
+void lval_print(lval* v) {
 	switch (v->type) {
 		case LVAL_NUM:	 printf("%li", v->num); break;
 		case LVAL_ERR:	 printf("error: %s", v->err); break;
 		case LVAL_SYM:	 printf("%s", v->sym); break;
 		case LVAL_SEXPR: lval_expr_print(v, '(', ')'); break;
+	}
 }
 
-void lval_println(lval* v) { lval_print(v); putchar('\n'); }
 
 /* print lval followed by newline */
-void lval_println(lval v) { lval_print(v); putchar('\n'); }
+void lval_println(lval* v) { lval_print(v); putchar('\n'); }
 
 void lval_del(lval* v) {
 	switch (v->type) {
@@ -219,8 +209,7 @@ void lval_del(lval* v) {
 		/* for err or sym, free the string data */
 		case LVAL_ERR: free(v->err); break;
 		case LVAL_SYM: free(v->sym); break;	
-		/* if sexpr then recursively delete all elements (lvals) inside */
-		case LVAL_SEXPR:
+		/* if sexpr then recursively delete all elements (lvals) inside */ case LVAL_SEXPR:
 			for (int i = 0; i < v->count; i++) {
 				lval_del(v->cell[i]);
 			}
@@ -230,51 +219,6 @@ void lval_del(lval* v) {
 	}
 	/* free memory for the lval struct itself */
 	free(v);
-}
-
-lval eval_op(lval x, char* op, lval y) {
-
-	/* if either value is an error, return it */
-	if (x.type == LVAL_ERR) {return x;}
-	if (y.type == LVAL_ERR) {return y;}
-
-	/* use symbol string to see which operation to perform */
-	if (strcmp(op, "+") == 0) {return lval_num(x.num + y.num);}
-	if (strcmp(op, "-") == 0) {return lval_num(x.num - y.num);}
-	if (strcmp(op, "*") == 0) {return lval_num(x.num * y.num);}
-	if (strcmp(op, "/") == 0) {
-		return y.num == 0
-			? lval_err(LERR_DIV_ZERO)
-			: lval_num(x.num / y.num);
-	}
-	return lval_err(LERR_BAD_OP);
-}
-
-lval eval(mpc_ast_t* t) {
-
-	if (strstr(t->tag,"number")) {
-		/* check if there is some error in conversion */
-		errno = 0;
-		/* strtol converts strings to longs. this allows
-		 * us to check special variable errno to ensure conversion
-		 * goes correctly. this is a more robust way
-		 * to convert numbers than our previous method
-		 * using atoi */
-		long x = strtol(t->contents, NULL, 10);
-		return errno != ERANGE ? lval_num(x) : lval_err(LERR_BAD_NUM);
-	}
-
-	char* op = t->children[1]->contents;
-	lval x = eval(t->children[2]);
-
-	/* iterate the remaining children and combining */
-	int i = 3;
-	while (strstr(t->children[i]->tag, "expr")) {
-		x = eval_op(x, op, eval(t->children[i]));
-		i++;
-	}
-
-	return x;
 }
 
 int main(int argc, char** argv) {
@@ -287,14 +231,16 @@ int main(int argc, char** argv) {
 	mpc_parser_t* Lispy 	= mpc_new("lispy");
 
 	/* Define them with the following language */
-	mpca_lang(MPCA_LANG_DEFAULT,
-  "                                                   \
-    number   : /-?[0-9]+/ ;                           \
-    symbol   : '+' | '-' | '*' | '/' ;                \
-	sexpr    : '(' <expr>* ')' ;					  \
-    expr     : <number> | '(' <symbol> <expr>+ ')' ;  \
-    lispy    : /^/ <symbol> <expr>+ /$/ ;             \
-  ", Number, Symbol, Sexpr, Expr, Lispy);
+  
+  mpca_lang(MPCA_LANG_DEFAULT,
+    "                                          \
+      number : /-?[0-9]+/ ;                    \
+      symbol : '+' | '-' | '*' | '/' ;         \
+      sexpr  : '(' <expr>* ')' ;               \
+      expr   : <number> | <symbol> | <sexpr> ; \
+      lispy  : /^/ <expr>* /$/ ;               \
+    ",
+    Number, Symbol, Sexpr, Expr, Lispy);
 
 
 	/* Prints version and exit info */
@@ -311,7 +257,7 @@ int main(int argc, char** argv) {
 			/* on success print the ast */
 			lval* x = lval_read(r.output);
 			lval_println(x);
-			lval_del(x)
+			lval_del(x);
 
 		} else {
 			/* otherwise print the error */
